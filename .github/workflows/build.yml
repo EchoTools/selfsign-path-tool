@@ -152,7 +152,7 @@ jobs:
         tag_name: ${{ env.TAG_NAME }}
         release_name: Release ${{ env.TAG_NAME }}
         body_path: RELEASE_NOTES.md
-        draft: true
+        draft: false
         prerelease: false
 
   upload-to-release:
