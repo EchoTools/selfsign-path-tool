@@ -7,6 +7,13 @@ on:
   release:
     types: [created]
 
+permissions:
+  contents: write  # actions/create-release + actions/upload-release-asset need this;
+                    # the repo's default GITHUB_TOKEN permission is read-only, which is
+                    # why every prior tag push failed at "Create Release" with
+                    # "Resource not accessible by integration" and never even produced
+                    # a draft to promote.
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -72,6 +79,14 @@ jobs:
         echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
 
     - name: Upload Release Asset
+      # Only meaningful for the `release: types: [created]` trigger, where
+      # github.event.release.upload_url actually exists. On the `push: tags`
+      # path there is no release object yet at this point (create-release
+      # hasn't run) -- github.event.release.upload_url is empty there, which
+      # previously failed this step with "Input required and not supplied:
+      # upload_url". The push path's asset upload is handled correctly, with
+      # a real upload_url, by the upload-to-release job below.
+      if: github.event_name == 'release'
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
