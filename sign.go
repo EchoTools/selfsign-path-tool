@@ -1,8 +1,11 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -76,11 +79,12 @@ func installCertificateToStore(cert interface{}) error {
 // signAuthenticode embeds an Authenticode signature in filename using osslsigncode.
 // The signed copy is written beside the original and renamed over it on success,
 // so a failed run leaves the original untouched.
-func signAuthenticode(filename string, cert *Certificate) error {
+func signAuthenticode(filename string, cert *Certificate) (err error) {
 	if _, err := osslsigncodeTool(); err != nil {
 		return err
 	}
 
+	// MkdirTemp creates the directory with mode 0700, so only this user can reach the key.
 	workDir, err := os.MkdirTemp(getCertificateDirectory(), "sign-work-")
 	if err != nil {
 		return fmt.Errorf("failed to create work directory: %w", err)
@@ -89,7 +93,20 @@ func signAuthenticode(filename string, cert *Certificate) error {
 
 	certPath := filepath.Join(workDir, "cert.pem")
 	keyPath := filepath.Join(workDir, "key.pem")
-	if err := writePEMFiles(certPath, keyPath, cert); err != nil {
+
+	// Register the erase before the key exists, so every path after this point erases it,
+	// including a failed write. The erase also runs during a panic. A failed erase is
+	// returned, not swallowed.
+	defer func() {
+		if eraseErr := secureDeleteFile(keyPath); eraseErr != nil {
+			err = errors.Join(err, fmt.Errorf("failed to erase temporary signing key: %w", eraseErr))
+		}
+	}()
+
+	if err := writeCertPEM(certPath, cert); err != nil {
+		return err
+	}
+	if err := writeKeyPEM(keyPath, cert.PrivateKey); err != nil {
 		return err
 	}
 
@@ -110,20 +127,96 @@ func signAuthenticode(filename string, cert *Certificate) error {
 	return nil
 }
 
-// writePEMFiles writes the certificate and private key in the PEM form osslsigncode reads.
-func writePEMFiles(certPath, keyPath string, cert *Certificate) error {
+// writeCertPEM writes the certificate in the PEM form osslsigncode reads. The certificate is public.
+func writeCertPEM(certPath string, cert *Certificate) error {
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Cert.Raw})
 	if err := os.WriteFile(certPath, certPEM, 0600); err != nil {
 		return fmt.Errorf("failed to write certificate for signing: %w", err)
 	}
+	return nil
+}
 
-	keyDER, err := x509.MarshalPKCS8PrivateKey(cert.PrivateKey)
+// writeKeyPEM writes the private key in PEM form. O_EXCL means it fails rather than
+// reusing an existing file, and mode 0600 limits access to this user. Once the file is
+// written, the in-memory copies of the key are zeroed.
+func writeKeyPEM(keyPath string, key *rsa.PrivateKey) error {
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return fmt.Errorf("failed to marshal private key: %w", err)
 	}
+	defer zeroBytes(keyDER)
+
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
-	if err := os.WriteFile(keyPath, keyPEM, 0600); err != nil {
+	defer zeroBytes(keyPEM)
+
+	f, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to create private key for signing: %w", err)
+	}
+	if _, err := f.Write(keyPEM); err != nil {
+		f.Close()
 		return fmt.Errorf("failed to write private key for signing: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return fmt.Errorf("failed to sync private key for signing: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("failed to close private key for signing: %w", err)
+	}
+	return nil
+}
+
+// zeroBytes overwrites a byte slice with zeros.
+func zeroBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
+// secureDeleteFile overwrites a file with random data, syncs each pass, and removes it.
+// It does nothing if the file does not exist. On journaling or SSD storage, old blocks
+// can survive an overwrite, so this reduces exposure but cannot guarantee erasure.
+func secureDeleteFile(path string) error {
+	if err := secureOverwriteFile(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("failed to remove %s: %w", path, err)
+	}
+	return nil
+}
+
+// secureOverwriteFile replaces the contents of a file with random data, three passes.
+func secureOverwriteFile(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open %s for overwrite: %w", path, err)
+	}
+	defer f.Close()
+
+	buf := make([]byte, info.Size())
+	defer zeroBytes(buf)
+	for pass := 0; pass < 3; pass++ {
+		if _, err := rand.Read(buf); err != nil {
+			return fmt.Errorf("failed to generate overwrite data: %w", err)
+		}
+		if _, err := f.WriteAt(buf, 0); err != nil {
+			return fmt.Errorf("failed to overwrite %s: %w", path, err)
+		}
+		if err := f.Sync(); err != nil {
+			return fmt.Errorf("failed to sync %s: %w", path, err)
+		}
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("failed to close %s after overwrite: %w", path, err)
 	}
 	return nil
 }
