@@ -113,7 +113,7 @@ func createSelfSignedCertificate(subjectName string) (*Certificate, error) {
 			CommonName: subjectName,
 		},
 		NotBefore:             time.Now(),
-		NotAfter:              time.Now().AddDate(3, 0, 0), // Valid for 3 years
+		NotAfter:              time.Now().AddDate(10, 0, 0), // Valid for 10 years
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning},
 		BasicConstraintsValid: true,
