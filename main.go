@@ -22,6 +22,7 @@ var (
 	flagHelp     = flag.Bool("h", false, "Display help documentation and exit")
 	flagVersion  = flag.Bool("version", false, "Display version information and exit")
 	flagGUI      = flag.Bool("gui", false, "Launch the graphical user interface (Windows only)")
+	flagSidecarOnly = flag.Bool("sidecar-only", false, "Write a .sig text sidecar instead of embedding an Authenticode signature")
 )
 
 func init() {
@@ -311,6 +312,16 @@ OPTIONS
 
     --gui
         Launch the graphical user interface (Windows only).
+
+    --sidecar-only
+        When signing, write a <file>.sig text file next to each target instead
+        of embedding an Authenticode signature. Does not modify the target.
+        --status and --clear still check and remove .sig files.
+
+REQUIREMENTS
+    Authenticode signing calls osslsigncode, which must be on PATH. Every
+    signing, status and clear operation is recorded as one JSON line in
+    audit.log in the certificate directory.
 
 EXAMPLES
     Sign a single executable:
