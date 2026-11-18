@@ -136,12 +136,16 @@ On first run, the tool:
 
 ### File Signing
 
-The signing process creates:
+Signing embeds an Authenticode signature in each file, on both Windows and Linux, by calling [osslsigncode](https://github.com/mtrojnar/osslsigncode). The file is signed in place, and the original is kept unless signing succeeds. `osslsigncode` must be on `PATH`.
 
-- **Windows**: `.sig` signature files alongside binaries (simplified Authenticode alternative)
-- **Linux**: `.sig` detached signature files (similar to GPG signatures)
+```bash
+# Use the legacy text sidecar (<file>.sig) instead; the target is not modified
+./selfsign-path-tool --sidecar-only myapp.exe
+```
 
-> **Note**: This implementation uses a simplified signing approach. For production code signing, consider using platform-specific tools like SignTool (Windows) or proper code signing certificates from Certificate Authorities.
+Each sign, status and clear operation appends one JSON line to `audit.log` in the certificate directory.
+
+> **Note**: The certificate is self-signed, so the signature is only trusted on machines that have it in their trust store. Signatures are not timestamped, so they stop validating when the certificate expires.
 
 ### Supported File Types
 
@@ -159,12 +163,12 @@ The tool automatically detects and processes these file types:
 
 ### Windows
 - Uses PowerShell for certificate store operations
-- Creates Authenticode-style signature files
+- Embeds Authenticode signatures via osslsigncode (`osslsigncode.exe` on PATH)
 - Supports Windows certificate store integration
 - Requires administrator privileges for system certificate installation
 
 ### Linux
-- Creates detached signature files
+- Embeds Authenticode signatures via osslsigncode, the same as Windows
 - Attempts to install certificates to system CA directories
 - Falls back to user certificate directory if system installation fails
 - Uses standard Linux certificate update tools when available

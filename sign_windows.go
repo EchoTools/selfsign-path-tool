@@ -8,9 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"syscall"
-	"time"
 )
 
 // Windows API constants
@@ -29,89 +27,6 @@ var (
 	procCertCloseStore = crypt32.NewProc("CertCloseStore")
 	procCertFreeCertificateContext = crypt32.NewProc("CertFreeCertificateContext")
 )
-
-// signFilePlatform signs a file on Windows using a simulated approach
-func signFilePlatform(filename string, cert *Certificate) error {
-	// On Windows, we would typically use SignTool.exe or the Windows Authenticode APIs
-	// For this implementation, we'll create a simple signature file alongside the binary
-	// This is a simplified approach since full Authenticode signing requires more complex implementation
-	
-	signatureFile := filename + ".sig"
-	
-	// Create a simple signature file indicating the file is signed
-	sigContent := fmt.Sprintf("SIGNED_BY=%s\nTIMESTAMP=%s\nCERT_SUBJECT=%s\n", 
-		cert.Subject, 
-		time.Now().Format(time.RFC3339),  // Use current timestamp
-		cert.Cert.Subject.String())
-	
-	if err := os.WriteFile(signatureFile, []byte(sigContent), 0644); err != nil {
-		return fmt.Errorf("failed to create signature file: %w", err)
-	}
-	
-	return nil
-}
-
-// getFileSignatureStatusPlatform checks signature status on Windows
-func getFileSignatureStatusPlatform(filename string) (*SignatureStatus, error) {
-	// Check if our simple signature file exists
-	signatureFile := filename + ".sig"
-	
-	if _, err := os.Stat(signatureFile); os.IsNotExist(err) {
-		return &SignatureStatus{
-			Status: "NotSigned",
-		}, nil
-	}
-	
-	// Read signature file
-	sigContent, err := os.ReadFile(signatureFile)
-	if err != nil {
-		return &SignatureStatus{
-			Status: "Error reading signature",
-		}, nil
-	}
-	
-	lines := strings.Split(string(sigContent), "\n")
-	status := &SignatureStatus{
-		Status: "Valid",
-		IsSelfSigned: true,
-	}
-	
-	for _, line := range lines {
-		if strings.HasPrefix(line, "SIGNED_BY=") {
-			status.SignerCertificate = strings.TrimPrefix(line, "SIGNED_BY=")
-		} else if strings.HasPrefix(line, "CERT_SUBJECT=") {
-			subject := strings.TrimPrefix(line, "CERT_SUBJECT=")
-			// Check if self-signed (simplified check)
-			status.IsSelfSigned = strings.Contains(subject, "LocalSign")
-		}
-	}
-	
-	return status, nil
-}
-
-// removeSelfSignedSignaturePlatform removes self-signed signatures on Windows
-func removeSelfSignedSignaturePlatform(filename string) (bool, error) {
-	signatureFile := filename + ".sig"
-	
-	// Check if signature file exists and is self-signed
-	status, err := getFileSignatureStatusPlatform(filename)
-	if err != nil {
-		return false, err
-	}
-	
-	if status.Status == "NotSigned" {
-		return false, nil
-	}
-	
-	if status.IsSelfSigned {
-		if err := os.Remove(signatureFile); err != nil {
-			return false, fmt.Errorf("failed to remove signature file: %w", err)
-		}
-		return true, nil
-	}
-	
-	return false, nil
-}
 
 // installCertificateToStorePlatform installs certificate to Windows certificate store
 func installCertificateToStorePlatform(certInterface interface{}) error {
