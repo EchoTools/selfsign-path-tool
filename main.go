@@ -14,7 +14,7 @@ const version = "1.0.0"
 // Command line flags
 var (
 	flagRecurse  = flag.Bool("r", false, "Recursively search for and process files in any specified directories")
-	flagName     = flag.String("n", "LocalSign-SelfSigned", "Specify the subject name of the certificate to use for signing")
+	flagName     = flag.String("n", "LocalSign-SelfSigned", "Specify the subject name of the one-time certificate created for this run")
 	flagCertFile = flag.String("c", "", "Specify the path to the certificate file (.cer or .pem)")
 	flagKeyFile  = flag.String("k", "", "Specify the path to the private key file (.pvk or .key)")
 	flagClear    = flag.Bool("clear", false, "Remove self-signed signatures created by this tool from the specified files")
@@ -285,9 +285,9 @@ OPTIONS
         Recursively search for and process files in any specified directories.
 
     -n <CERT_NAME>, --name <CERT_NAME>
-        Specify the subject name of the certificate to use for signing. If not
-        found, a new certificate with this name is created. Defaults to a
-        pre-configured name if not provided.
+        Specify the subject name of the certificate created for this run. A new
+        one-time certificate is generated on every run, and its private key is
+        erased once signing is done. Defaults to a pre-configured name.
 
     -c <CERT_FILE>, --cert-file <CERT_FILE>
         Specify the path to the certificate file (.cer or .pem). This bypasses

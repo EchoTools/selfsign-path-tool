@@ -126,10 +126,10 @@ The GUI provides a step-by-step wizard that:
 
 On first run, the tool:
 
-1. **Generates** a new RSA 2048-bit self-signed certificate
-2. **Saves** the certificate and private key to a local directory:
-   - **Windows**: `%APPDATA%\selfsign-path-tool\certificates\`
-   - **Linux**: `~/.local/share/selfsign-path-tool/certificates/`
+1. **Generates** a new RSA 2048-bit self-signed certificate on every run. It is one-time: nothing is reused between runs
+2. **Keeps the private key in memory only.** Signing needs a temporary key file, which is erased right after each file is signed. Nothing is saved to disk. The audit log goes in:
+   - **Windows**: `%APPDATA%\selfsign-path-tool\certificates\audit.log`
+   - **Linux**: `~/.local/share/selfsign-path-tool/certificates/audit.log`
 3. **Installs** the certificate to the system trust store:
    - **Windows**: Local Machine Trusted Root store (requires admin)
    - **Linux**: `/usr/local/share/ca-certificates/` or user directory
