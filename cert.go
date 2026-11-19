@@ -26,7 +26,9 @@ func getCertificate() (*Certificate, error) {
 	if *flagCertFile != "" && *flagKeyFile != "" {
 		return loadCertificateFromFile(*flagCertFile, *flagKeyFile)
 	}
-	return getOrCreateSelfSignedCertificate(*flagName)
+	// No certificate or key is reused between runs. Each run gets a one-time key, which is
+	// erased after signing and never written to the certificate directory.
+	return createSelfSignedCertificate(*flagName)
 }
 
 // loadCertificateFromFile loads a certificate and private key from files
@@ -79,25 +81,6 @@ func loadCertificateFromFile(certFile, keyFile string) (*Certificate, error) {
 	}, nil
 }
 
-// getOrCreateSelfSignedCertificate gets an existing certificate or creates a new one
-func getOrCreateSelfSignedCertificate(subjectName string) (*Certificate, error) {
-	// Try to load existing certificate
-	certDir := getCertificateDirectory()
-	certFile := filepath.Join(certDir, fmt.Sprintf("%s.crt", subjectName))
-	keyFile := filepath.Join(certDir, fmt.Sprintf("%s.key", subjectName))
-
-	if _, err := os.Stat(certFile); err == nil {
-		if _, err := os.Stat(keyFile); err == nil {
-			fmt.Printf("Using existing certificate: %s\n", subjectName)
-			return loadCertificateFromFile(certFile, keyFile)
-		}
-	}
-
-	// Create new certificate
-	fmt.Printf("Creating new self-signed certificate with subject: %s\n", subjectName)
-	return createSelfSignedCertificate(subjectName)
-}
-
 // createSelfSignedCertificate creates a new self-signed certificate
 func createSelfSignedCertificate(subjectName string) (*Certificate, error) {
 	// Generate private key
@@ -130,10 +113,8 @@ func createSelfSignedCertificate(subjectName string) (*Certificate, error) {
 		return nil, fmt.Errorf("failed to parse created certificate: %w", err)
 	}
 
-	// Save certificate and key to files
-	if err := saveCertificateFiles(subjectName, cert, privateKey); err != nil {
-		fmt.Printf("Warning: Failed to save certificate to disk: %v\n", err)
-	}
+	// The private key is deliberately not written to disk. The only on-disk copy is the
+	// temporary file that signing needs, which is erased once each file is signed.
 
 	// Try to install certificate to system store (platform-specific)
 	if err := installCertificateToStore(cert); err != nil {
@@ -178,51 +159,4 @@ func getCertificateDirectory() string {
 	}
 
 	return certDir
-}
-
-// saveCertificateFiles saves the certificate and private key to disk
-func saveCertificateFiles(subjectName string, cert *x509.Certificate, privateKey *rsa.PrivateKey) error {
-	certDir := getCertificateDirectory()
-	
-	// Save certificate
-	certFile := filepath.Join(certDir, fmt.Sprintf("%s.crt", subjectName))
-	certOut, err := os.Create(certFile)
-	if err != nil {
-		return fmt.Errorf("failed to create certificate file: %w", err)
-	}
-	defer certOut.Close()
-
-	if err := pem.Encode(certOut, &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: cert.Raw,
-	}); err != nil {
-		return fmt.Errorf("failed to write certificate: %w", err)
-	}
-
-	// Save private key
-	keyFile := filepath.Join(certDir, fmt.Sprintf("%s.key", subjectName))
-	keyOut, err := os.Create(keyFile)
-	if err != nil {
-		return fmt.Errorf("failed to create key file: %w", err)
-	}
-	defer keyOut.Close()
-
-	if err := keyOut.Chmod(0600); err != nil {
-		fmt.Printf("Warning: Failed to set key file permissions: %v\n", err)
-	}
-
-	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
-	if err != nil {
-		return fmt.Errorf("failed to marshal private key: %w", err)
-	}
-
-	if err := pem.Encode(keyOut, &pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: privateKeyBytes,
-	}); err != nil {
-		return fmt.Errorf("failed to write private key: %w", err)
-	}
-
-	fmt.Printf("Saved certificate files to: %s\n", certDir)
-	return nil
 }

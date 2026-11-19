@@ -122,6 +122,7 @@ func TestAuthenticodeSignStatusClear(t *testing.T) {
 	if _, err := os.Stat(target + ".sig"); err == nil {
 		t.Error("default signing wrote a sidecar file")
 	}
+	assertNoKeyMaterial(t, home)
 
 	status, err := runTool(t, bin, home, "--status", target)
 	if err != nil {
